@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM maven:3.9.6-eclipse-temurin-17 AS build # Use a Maven image with your desired JDK version
+FROM maven:3.9.6-eclipse-temurin-17 AS build
 
 WORKDIR /app
 
@@ -32,6 +32,3 @@ EXPOSE 8080
 
 # Define the command to run your Spring Boot application
 ENTRYPOINT ["java", "-jar", "app.jar"]
-
-# Optional: Set Spring profile for Render if needed (e.g., for different application.properties)
-# CMD ["java", "-Dspring.profiles.active=render", "-jar", "app.jar"]
