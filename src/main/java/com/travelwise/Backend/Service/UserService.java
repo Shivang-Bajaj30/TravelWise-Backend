@@ -13,8 +13,19 @@ public class UserService {
 
     public User registerUser(User user) {
         if (userRepo.existsByEmail(user.getEmail())) {
-            throw new RuntimeException("Email Already Exists!");
+            throw new RuntimeException("Email already exists!");
         }
         return userRepo.save(user);
+    }
+
+    public User login(String email, String password) {
+        return userRepo.findByEmail(email)
+                .map(user -> {
+                    if (!user.getPassword().equals(password)) {
+                        throw new RuntimeException("Incorrect password");
+                    }
+                    return user;
+                })
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 }
