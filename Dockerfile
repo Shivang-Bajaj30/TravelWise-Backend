@@ -18,7 +18,8 @@ COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Stage 2: Create the final lightweight image
-FROM eclipse-temurin:17-jre-alpine # Use a smaller JRE image for the final artifact
+# Use a smaller JRE image for the final artifact
+FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
