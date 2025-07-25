@@ -9,9 +9,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class CorsConfig {
-
-    // Make sure this matches the NAME_OF_VARIABLE you set in Render
-    // For local testing, you can provide a default value (e.g., http://localhost:3000)
     @Value("${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:4200,http://127.0.0.1:3000}")
     private String allowedOrigins;
 
