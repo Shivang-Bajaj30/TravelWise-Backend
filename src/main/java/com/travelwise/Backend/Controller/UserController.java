@@ -96,12 +96,16 @@ public class UserController {
             return ResponseEntity.ok(user);
         } catch (RuntimeException e) {
             String message = e.getMessage();
+            Map<String, String> errorResponse = new HashMap<>();
             if ("User not found".equals(message)) {
-                return ResponseEntity.status(404).body(message);
+                errorResponse.put("error", "User not found");
+                return ResponseEntity.status(404).body(errorResponse);
             } else if ("Incorrect password".equals(message)) {
-                return ResponseEntity.status(401).body(message);
+                errorResponse.put("error", "Incorrect password");
+                return ResponseEntity.status(401).body(errorResponse);
             } else {
-                return ResponseEntity.badRequest().body("Login failed");
+                errorResponse.put("error", "Login failed");
+                return ResponseEntity.badRequest().body(errorResponse);
             }
         }
     }
