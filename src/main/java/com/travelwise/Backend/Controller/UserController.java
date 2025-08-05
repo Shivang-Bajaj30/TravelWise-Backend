@@ -1,53 +1,3 @@
-//package com.travelwise.Backend.Controller;
-//
-//import com.travelwise.Backend.Model.User;
-//import com.travelwise.Backend.Service.UserService;
-//import org.springframework.beans.factory.annotation.Autowired;
-//import org.springframework.http.ResponseEntity;
-//import org.springframework.web.bind.annotation.*;
-//
-//import java.util.Map;
-//
-//@RestController
-//@RequestMapping("/api")
-//public class UserController {
-//
-//    @Autowired
-//    private UserService userService;
-//
-//    @PostMapping("/signup")
-//    public ResponseEntity<String> signup(@RequestBody User user) {
-//        try {
-//            userService.registerUser(user);
-//            return ResponseEntity.ok("User registered successfully");
-//        } catch (Exception e) {
-//            return ResponseEntity.badRequest().body(e.getMessage());
-//        }
-//    }
-//
-//    @PostMapping("/login")
-//    public ResponseEntity<?> login(@RequestBody Map<String, String> credentials) {
-//        String email = credentials.get("email");
-//        String password = credentials.get("password");
-//
-//        try {
-//            User user = userService.login(email, password);
-//            return ResponseEntity.ok(user);
-//        } catch (RuntimeException e) {
-//            String message = e.getMessage();
-//            if ("User not found".equals(message)) {
-//                return ResponseEntity.status(404).body(message);
-//            } else if ("Incorrect password".equals(message)) {
-//                return ResponseEntity.status(401).body(message);
-//            } else {
-//                return ResponseEntity.badRequest().body("Login failed");
-//            }
-//        }
-//    }
-//}
-
-
-
 package com.travelwise.Backend.Controller;
 
 import com.travelwise.Backend.Model.User;
@@ -56,8 +6,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -73,10 +24,10 @@ public class UserController {
     @Autowired
     private RestTemplate restTemplate;
 
-    @Value("${mapbox.api.key}")
-    private String mapboxApiKey;
+    @Value("${olamaps.api.key}")
+    private String olaMapsApiKey;
 
-    @PostMapping("auth/signup")
+    @PostMapping("/signup")
     public ResponseEntity<String> signup(@RequestBody User user) {
         try {
             userService.registerUser(user);
@@ -86,7 +37,7 @@ public class UserController {
         }
     }
 
-    @PostMapping("auth/login")
+    @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> credentials) {
         String email = credentials.get("email");
         String password = credentials.get("password");
@@ -96,52 +47,63 @@ public class UserController {
             return ResponseEntity.ok(user);
         } catch (RuntimeException e) {
             String message = e.getMessage();
-            Map<String, String> errorResponse = new HashMap<>();
             if ("User not found".equals(message)) {
-                errorResponse.put("error", "User not found");
-                return ResponseEntity.status(404).body(errorResponse);
+                return ResponseEntity.status(404).body(message);
             } else if ("Incorrect password".equals(message)) {
-                errorResponse.put("error", "Incorrect password");
-                return ResponseEntity.status(401).body(errorResponse);
+                return ResponseEntity.status(401).body(message);
             } else {
-                errorResponse.put("error", "Login failed");
-                return ResponseEntity.badRequest().body(errorResponse);
+                return ResponseEntity.badRequest().body("Login failed");
             }
         }
     }
 
-    // ✅ Mapbox-based location suggestions
     @GetMapping("/locations")
-    public ResponseEntity<List<NominatimResult>> getLocationSuggestions(@RequestParam String query) {
+    public ResponseEntity<List<OlaMapsResult>> getLocationSuggestions(@RequestParam String query) {
         try {
             String url = UriComponentsBuilder
-                    .fromHttpUrl("https://api.mapbox.com/geocoding/v5/mapbox.places/{query}.json")
-                    .queryParam("access_token", mapboxApiKey)
-                    .queryParam("autocomplete", "true")
+                    .fromHttpUrl("https://api.olamaps.io/places/v1/autocomplete")
+                    .queryParam("input", query)
+                    .queryParam("api_key", olaMapsApiKey)
                     .queryParam("limit", 5)
-                    .buildAndExpand(query)
                     .toUriString();
+            System.out.println("Request URL: " + url);
 
-            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Request-Id", UUID.randomUUID().toString());
+            headers.set("X-Correlation-Id", UUID.randomUUID().toString());
+            HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            if (response == null || !response.containsKey("features")) {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+            System.out.println("Response Status: " + response.getStatusCode());
+            System.out.println("Response Body: " + response.getBody());
+
+            if (response.getBody() == null || !response.getBody().containsKey("predictions")) {
                 return ResponseEntity.noContent().build();
             }
 
-            List<Map<String, Object>> features = (List<Map<String, Object>>) response.get("features");
+            List<Map<String, Object>> predictions = (List<Map<String, Object>>) response.getBody().get("predictions");
 
-            List<NominatimResult> results = new ArrayList<>();
-            for (Map<String, Object> feature : features) {
-                String placeName = (String) feature.get("place_name");
-                if (placeName != null) {
-                    NominatimResult result = new NominatimResult();
-                    result.setDisplay_name(placeName);
-                    results.add(result);
+            List<OlaMapsResult> results = new ArrayList<>();
+            for (Map<String, Object> prediction : predictions) {
+                String description = (String) prediction.get("description");
+                Map<String, Object> geometry = (Map<String, Object>) prediction.get("geometry");
+                if (description != null && geometry != null) {
+                    Map<String, Double> location = (Map<String, Double>) geometry.get("location");
+                    if (location != null) {
+                        OlaMapsResult result = new OlaMapsResult();
+                        result.setDescription(description);
+                        result.setGeometry(new Geometry(location.get("lat"), location.get("lng")));
+                        result.setPlace_id((String) prediction.get("place_id"));
+                        results.add(result);
+                    }
                 }
             }
 
             return ResponseEntity.ok(results);
 
+        } catch (HttpClientErrorException e) {
+            System.err.println("HTTP Error: " + e.getStatusCode() + " - " + e.getResponseBodyAsString());
+            return ResponseEntity.status(e.getStatusCode()).body(null);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(500).body(null);
@@ -160,8 +122,32 @@ public class UserController {
 
     @Getter
     @Setter
-    static class NominatimResult {
-        private String display_name;
+    static class OlaMapsResult {
+        private String description;
+        private Geometry geometry;
+        private String place_id;
+    }
+
+    @Getter
+    @Setter
+    static class Geometry {
+        private Location location;
+
+        public Geometry(Double lat, Double lng) {
+            this.location = new Location(lat, lng);
+        }
+    }
+
+    @Getter
+    @Setter
+    static class Location {
+        private Double lat;
+        private Double lng;
+
+        public Location(Double lat, Double lng) {
+            this.lat = lat;
+            this.lng = lng;
+        }
     }
 
     @Getter
