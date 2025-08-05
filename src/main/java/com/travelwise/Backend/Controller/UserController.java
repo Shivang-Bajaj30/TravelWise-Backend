@@ -27,7 +27,7 @@ public class UserController {
     @Value("${olamaps.api.key}")
     private String olaMapsApiKey;
 
-    @PostMapping("/signup")
+    @PostMapping("auth/signup")
     public ResponseEntity<String> signup(@RequestBody User user) {
         try {
             userService.registerUser(user);
@@ -37,7 +37,7 @@ public class UserController {
         }
     }
 
-    @PostMapping("/login")
+    @PostMapping("auth/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> credentials) {
         String email = credentials.get("email");
         String password = credentials.get("password");
