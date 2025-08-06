@@ -58,13 +58,12 @@ public class UserController {
     }
 
     @GetMapping("/locations")
-    public ResponseEntity<List<OlaMapsResult>> getLocationSuggestions(@RequestParam String query) {
+    public ResponseEntity<List<GoMapsResult>> getLocationSuggestions(@RequestParam String query) {
         try {
             String url = UriComponentsBuilder
-                    .fromHttpUrl("https://api.olamaps.io/places/v1/autocomplete")
+                    .fromHttpUrl("https://maps.gomaps.pro/maps/api/place/autocomplete/json")
                     .queryParam("input", query)
-                    .queryParam("api_key", olaMapsApiKey)
-                    .queryParam("limit", 5)
+                    .queryParam("key", olaMapsApiKey) // Replace with your API key
                     .toUriString();
             System.out.println("Request URL: " + url);
 
@@ -83,20 +82,15 @@ public class UserController {
 
             List<Map<String, Object>> predictions = (List<Map<String, Object>>) response.getBody().get("predictions");
 
-            List<OlaMapsResult> results = new ArrayList<>();
+            List<GoMapsResult> results = new ArrayList<>();
             for (Map<String, Object> prediction : predictions) {
                 String description = (String) prediction.get("description");
-                Map<String, Object> geometry = (Map<String, Object>) prediction.get("geometry");
-                if (description != null && geometry != null) {
-                    Map<String, Double> location = (Map<String, Double>) geometry.get("location");
-                    if (location != null) {
-                        OlaMapsResult result = new OlaMapsResult();
-                        result.setDescription(description);
-                        result.setGeometry(new Geometry(location.get("lat"), location.get("lng")));
-                        result.setPlace_id((String) prediction.get("place_id"));
-                        results.add(result);
-                    }
-                }
+                String placeId = (String) prediction.get("place_id");
+
+                GoMapsResult result = new GoMapsResult();
+                result.setDescription(description);
+                result.setPlace_id(placeId);
+                results.add(result);
             }
 
             return ResponseEntity.ok(results);
@@ -110,6 +104,14 @@ public class UserController {
         }
     }
 
+    @Getter
+    @Setter
+    static class GoMapsResult {
+        private String description;
+        private String place_id;
+    }
+
+
     @PostMapping("/trip")
     public ResponseEntity<String> submitTripDetails(@RequestBody TripDetails tripDetails) {
         try {
@@ -118,14 +120,6 @@ public class UserController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to process trip details: " + e.getMessage());
         }
-    }
-
-    @Getter
-    @Setter
-    static class OlaMapsResult {
-        private String description;
-        private Geometry geometry;
-        private String place_id;
     }
 
     @Getter
