@@ -1,5 +1,7 @@
 package travelwise.backend.controller;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import travelwise.backend.dto.Login;
 import travelwise.backend.dto.Signup;
 import travelwise.backend.Models.User;
@@ -63,4 +65,34 @@ public class AuthController {
                 "token", token
         ));
     }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // 1. Check if token is present
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized: No token provided"));
+        }
+
+        try {
+            // 2. Extract and parse the token
+            String token = authHeader.substring(7); // Removes "Bearer "
+            var claims = jwtUtil.parseToken(token);
+
+            // 3. Get the email from the token claims
+            String email = claims.get("email", String.class);
+
+            // 4. Find the user
+            var user = userRepo.findByEmail(email).orElse(null);
+
+            if (user != null) {
+                return ResponseEntity.ok(user);
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "User not found"));
+            }
+        } catch (Exception e) {
+            // 5. If token is expired or invalid, parseToken() throws an error which we catch here
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid or expired token"));
+        }
+    }
+
 }
