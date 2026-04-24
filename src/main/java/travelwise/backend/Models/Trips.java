@@ -1,41 +1,42 @@
 package travelwise.backend.Models;
 
-import jakarta.persistence.*;
-import lombok.*;
-import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "trips")
-@Data @NoArgsConstructor @AllArgsConstructor @Builder
+import org.springframework.data.annotation.Id;
+import lombok.*;
+import org.springframework.data.mongodb.core.mapping.Document;
+import java.time.LocalDateTime;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.event.AbstractMongoEventListener;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@Document(collection = "testing")
 public class Trips {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private String id;
 
-    @Column(nullable = false, length = 200)
     private String location;
 
-    @Column(nullable = false)
     private Integer travelers;
 
-    @Column(name = "start_date", nullable = false, length = 50)
+    @Field("start_date")
     private String startDate;
 
-    @Column(name = "end_date", nullable = false, length = 50)
+    @Field("end_date")
     private String endDate;
 
-    @Column(columnDefinition = "TEXT")
     private String preferences;
 
-    @Column(name = "itinerary_data", columnDefinition = "TEXT")
+    @Field("itinerary_data")
     private String itineraryData;
 
-    @Column(name = "created_at")
+    @Field("created_at")
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
+    @Field("updated_at")
+    private LocalDateTime updatedAt;
+
 }

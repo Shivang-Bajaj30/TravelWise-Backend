@@ -1,8 +1,9 @@
 package travelwise.backend.Repo;
 
 
+import org.springframework.data.mongodb.repository.MongoRepository;
 import travelwise.backend.Models.Trips;
-import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface TripRepo extends JpaRepository<Trips, Integer> {
+public interface TripRepo extends MongoRepository<Trips, Integer> {
+
 }

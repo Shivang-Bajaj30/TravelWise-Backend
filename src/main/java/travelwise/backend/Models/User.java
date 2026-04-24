@@ -1,26 +1,24 @@
 package travelwise.backend.Models;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
 import lombok.*;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
-@Entity
-@Table(name = "users")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Document(collection = "users")
 public class User {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private String id;
 
-    @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 120)
+    @Indexed(unique = true)
     private String email;
 
-    @Column(nullable = false, length = 200)
     private String password;
 }
