@@ -25,7 +25,8 @@ public class GeminiService {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String[] GEMINI_MODELS = {
-        "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"
+            "gemini-2.0-flash",
+            "gemini-1.5-flash"
     };
 
     // ---- Date parsing ----
@@ -136,7 +137,7 @@ public class GeminiService {
     // ---- Generate itinerary chunk ----
     private Map<String, Object> generateItineraryChunk(
             String destination, int travelers, String startDate,
-            String endDate, String preferences, String budget, String travelWith) {
+            String endDate, String preferences, String budget) {
 
         int daysCount;
         try {
@@ -147,48 +148,14 @@ public class GeminiService {
         } catch (Exception e) {
             daysCount = 1;
         }
-
-        String travelWithDisplay = (travelWith != null && !travelWith.isEmpty()) ? travelWith
-                : (preferences != null && !preferences.isEmpty()) ? preferences : "travelers' preferences";
         String budgetDisplay = (budget != null && !budget.isEmpty()) ? budget : "unspecified";
 
         String prompt = """
-            Create a %d-day travel itinerary for %d people visiting %s on a %s budget, tailored for %s.
-            Use real, famous places and hotels that actually exist in %s.
-            Include 4-5 hotels with varying price ranges. Keep descriptions short (1 sentence max).
-            Do NOT include any Google Maps URLs. Only include coordinates.
-
-            Return a valid JSON object with this exact structure:
-
-            {
-                "places": [
-                    {
-                        "name": "Real place name",
-                        "time": "2-3 hours",
-                        "details": "One sentence description",
-                        "coordinates": {"lat": 0.0, "lng": 0.0},
-                        "pricing": "Entry fee",
-                        "bestTime": "Best time to visit"
-                    }
-                ],
-                "hotels": [
-                    {
-                        "name": "Real hotel name",
-                        "address": "Short address",
-                        "coordinates": {"lat": 0.0, "lng": 0.0},
-                        "price": "Price range per night",
-                        "rating": "4.5/5",
-                        "amenities": ["WiFi", "Pool"],
-                        "description": "One sentence"
-                    }
-                ],
-                "transportation": ["Option 1", "Option 2"],
-                "costs": ["Accommodation: ₹X", "Food: ₹Y"],
-                "itinerary": [{"day": 1, "activities": ["Morning: Activity", "Afternoon: Activity"]}]
-            }
-
-            IMPORTANT: The 'itinerary' array MUST contain EXACTLY %d objects. Number 'day' fields sequentially from 1 to %d.
-            """.formatted(daysCount, travelers, destination, budgetDisplay, travelWithDisplay, destination, daysCount, daysCount);
+        Create a %d-day travel itinerary for %d people visiting %s on a %s budget.
+        Use real, famous places and hotels that actually exist in %s.
+        ...JSON structure...
+        IMPORTANT: The 'itinerary' array MUST contain EXACTLY %d objects. Number 'day' fields sequentially from 1 to %d.
+    """.formatted(daysCount, travelers, destination, budgetDisplay, destination, daysCount, daysCount);
 
         try {
             String content = callGemini(prompt);
@@ -241,24 +208,11 @@ public class GeminiService {
 
 
             Map<String, Object> fallback = new HashMap<>();
-            fallback.put("places", List.of(Map.of(
-                "name", "FALLBACK DATA", "details", "FALLBACK DATA", "time", "FALLBACK DATA",
-                "pricing", "FALLBACK DATA", "bestTime", "FALLBACK DATA",
-                "coordinates", Map.of("lat", 25.1972, "lng", 55.2744)
-            )));
-            fallback.put("hotels", List.of(Map.of(
-                "name", "FALLBACK DATA", "address", "FALLBACK DATA",
-                "coordinates", Map.of("lat", 25.1304, "lng", 55.1171),
-                "price", "FALLBACK DATA", "rating", "FALLBACK DATA",
-                "amenities", List.of("FALLBACK DATA"),
-                "description", "FALLBACK DATA"
-            )));
-
-            fallback.put("transportation", List.of("FALLBACK DATA"));
-            fallback.put("costs", List.of("FALLBACK DATA"));
+            fallback.put("places", Collections.emptyList());
+            fallback.put("hotels", Collections.emptyList());
+            fallback.put("transportation", List.of("FALLBACK"));
+            fallback.put("costs", List.of("Rs. 0"));
             fallback.put("itinerary", fallbackItinerary);
-            fallback.put("error", e.getMessage());
-            fallback.put("source", "error");
             return fallback;
         }
     }
@@ -266,7 +220,7 @@ public class GeminiService {
     // ---- Main public method: splits into 7-day chunks if needed ----
     public Map<String, Object> generateItinerary(
             String destination, int travelers, String startDate,
-            String endDate, String preferences, String budget, String travelWith) {
+            String endDate, String preferences, String budget) {
 
         LocalDate sd, ed;
         int daysCount;
@@ -278,7 +232,7 @@ public class GeminiService {
         } catch (Exception e) {
             // Cannot parse dates, fall back to single chunk
             return generateItineraryChunk(destination, travelers, startDate, endDate,
-                preferences, budget, travelWith);
+                preferences, budget);
         }
 
         if (daysCount > 7) {
@@ -298,7 +252,7 @@ public class GeminiService {
                 Map<String, Object> chunkResult = generateItineraryChunk(
                     destination, travelers,
                     chunkStart.toString(), chunkEnd.toString(),
-                    preferences, budget, travelWith
+                    preferences, budget
                 );
 
                 // Merge itinerary days with correct numbering
@@ -332,6 +286,6 @@ public class GeminiService {
 
         // Single chunk (<=7 days)
         return generateItineraryChunk(destination, travelers, startDate, endDate,
-            preferences, budget, travelWith);
+            preferences, budget);
     }
 }
