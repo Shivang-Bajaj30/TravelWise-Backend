@@ -18,16 +18,34 @@ import java.util.regex.*;
 @Slf4j
 public class GeminiService {
 
-    @Value("${gemini.api-key}")
-    private String apiKey;
+    // Primary Provider Configuration
+    @Value("${ai.primary-provider:gemini}")
+    private String primaryProvider;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    @Value("${ai.fallback-provider:groq}")
+    private String fallbackProvider;
+
+    // Gemini Configuration
+    @Value("${gemini.api-key:}")
+    private String geminiApiKey;
 
     private static final String[] GEMINI_MODELS = {
             "gemini-2.0-flash",
             "gemini-1.5-flash"
     };
+
+    // Groq Configuration - Multiple models to try
+    @Value("${groq.api-key:}")
+    private String groqApiKey;
+
+    private static final String[] GROQ_MODELS = {
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "openai/gpt-oss-20b"
+    };
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate restTemplate = new RestTemplate();
 
     // ---- Date parsing ----
     private LocalDate parseDate(String d) {
@@ -40,32 +58,42 @@ public class GeminiService {
         return LocalDate.parse(d); // ISO fallback
     }
 
-    // ---- Call Gemini REST API with model fallback ----
+    // ---- Call AI API (route to Gemini or Groq) ----
+    @SuppressWarnings("unchecked")
+    private String callAI(String prompt, String provider) {
+        if ("groq".equalsIgnoreCase(provider)) {
+            return callGroq(prompt);
+        } else {
+            return callGemini(prompt);
+        }
+    }
+
+    // ---- Call Gemini REST API (with model fallback) ----
     @SuppressWarnings("unchecked")
     private String callGemini(String prompt) {
         Exception lastError = null;
 
         for (String model : GEMINI_MODELS) {
             try {
-                log.info("[GeminiService] Trying model: {}", model);
+                log.info("[GeminiService] Trying Gemini model: {}", model);
                 String url = String.format(
-                    "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
-                    model, apiKey
+                        "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+                        model, geminiApiKey
                 );
 
                 Map<String, Object> requestBody = Map.of(
-                    "contents", List.of(Map.of(
-                        "parts", List.of(Map.of("text", prompt))
-                    )),
-                    "generationConfig", Map.of(
-                        "temperature", 0.2,
-                        "maxOutputTokens", 8000,
-                        "responseMimeType", "application/json"
-                    ),
-                    "systemInstruction", Map.of(
-                        "parts", List.of(Map.of("text",
-                            "You are a travel itinerary assistant that returns only valid JSON."))
-                    )
+                        "contents", List.of(Map.of(
+                                "parts", List.of(Map.of("text", prompt))
+                        )),
+                        "generationConfig", Map.of(
+                                "temperature", 0.2,
+                                "maxOutputTokens", 8000,
+                                "responseMimeType", "application/json"
+                        ),
+                        "systemInstruction", Map.of(
+                                "parts", List.of(Map.of("text",
+                                        "You are a travel itinerary assistant that returns only valid JSON."))
+                        )
                 );
 
                 HttpHeaders headers = new HttpHeaders();
@@ -80,7 +108,7 @@ public class GeminiService {
                 var parts = (List<Map<String, Object>>) content.get("parts");
                 String text = (String) parts.get(0).get("text");
 
-                log.info("[GeminiService] ✅ Success with model: {}", model);
+                log.info("[GeminiService] ✅ Gemini succeeded");
                 return text.trim();
 
             } catch (Exception e) {
@@ -97,6 +125,70 @@ public class GeminiService {
             }
         }
         throw new RuntimeException("All Gemini models exhausted (rate limited).", lastError);
+    }
+
+    // ---- Call Groq/Llama API (with model fallback) ----
+    @SuppressWarnings("unchecked")
+    private String callGroq(String prompt) {
+        Exception lastError = null;
+
+        for (String model : GROQ_MODELS) {
+            try {
+                log.info("[GeminiService] Trying Groq model: {}", model);
+
+                String url = "https://api.groq.com/openai/v1/chat/completions";
+
+                Map<String, Object> requestBody = Map.of(
+                        "model", model,
+                        "messages", List.of(
+                                Map.of("role", "system", "content",
+                                        "You are a travel itinerary assistant that returns only valid JSON."),
+                                Map.of("role", "user", "content", prompt)
+                        ),
+                        "temperature", 0.2,
+                        "max_tokens", 8000
+                );
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.set("Authorization", "Bearer " + groqApiKey);
+                HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
+
+                var choices = (List<Map<String, Object>>) response.getBody().get("choices");
+                var message = (Map<String, Object>) choices.get(0).get("message");
+                String text = (String) message.get("content");
+
+                log.info("[GeminiService] ✅ Groq succeeded with model: {}", model);
+                return text.trim();
+
+            } catch (Exception e) {
+                lastError = e;
+                String errMsg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+
+                // Check if model is decommissioned or unavailable
+                boolean isModelIssue = errMsg.contains("decommissioned") ||
+                        errMsg.contains("not found") ||
+                        errMsg.contains("invalid_request_error");
+
+                if (isModelIssue) {
+                    log.warn("[GeminiService] ⚠️ {} unavailable, trying next Groq model...", model);
+                    continue;
+                }
+
+                // If it's a rate limit, also try next model
+                boolean isRateLimit = errMsg.contains("429") || errMsg.contains("quota") ||
+                        errMsg.contains("rate_limit");
+                if (isRateLimit) {
+                    log.warn("[GeminiService] ⚠️ {} rate limited, trying next model...", model);
+                    continue;
+                }
+
+                throw e;
+            }
+        }
+        throw new RuntimeException("All Groq models exhausted or unavailable.", lastError);
     }
 
     // ---- JSON extraction ----
@@ -122,9 +214,9 @@ public class GeminiService {
 
         // Repair truncated JSON (missing closing brackets/braces)
         long openBraces = content.chars().filter(c -> c == '{').count()
-                        - content.chars().filter(c -> c == '}').count();
+                - content.chars().filter(c -> c == '}').count();
         long openBrackets = content.chars().filter(c -> c == '[').count()
-                          - content.chars().filter(c -> c == ']').count();
+                - content.chars().filter(c -> c == ']').count();
 
         if (openBraces > 0 || openBrackets > 0) {
             content += "]".repeat((int) Math.max(0, openBrackets));
@@ -151,21 +243,54 @@ public class GeminiService {
         String budgetDisplay = (budget != null && !budget.isEmpty()) ? budget : "unspecified";
 
         String prompt = """
-        Create a %d-day travel itinerary for %d people visiting %s on a %s budget.
-        Use real, famous places and hotels that actually exist in %s.
-        ...JSON structure...
-        IMPORTANT: The 'itinerary' array MUST contain EXACTLY %d objects. Number 'day' fields sequentially from 1 to %d.
-    """.formatted(daysCount, travelers, destination, budgetDisplay, destination, daysCount, daysCount);
+            Create a %d-day travel itinerary for %d people visiting %s on a %s budget.
+            Use real, famous places and hotels that actually exist in %s.
+            Include 4-5 hotels with varying price ranges. Keep descriptions short (1 sentence max).
+            Do NOT include any Google Maps URLs. Only include coordinates.
+
+            Return a valid JSON object with this exact structure:
+
+            {
+                "places": [
+                    {
+                        "name": "Real place name",
+                        "time": "2-3 hours",
+                        "details": "One sentence description",
+                        "coordinates": {"lat": 0.0, "lng": 0.0},
+                        "pricing": "Entry fee",
+                        "bestTime": "Best time to visit"
+                    }
+                ],
+                "hotels": [
+                    {
+                        "name": "Real hotel name",
+                        "address": "Short address",
+                        "coordinates": {"lat": 0.0, "lng": 0.0},
+                        "price": "Price range per night",
+                        "rating": "4.5/5",
+                        "amenities": ["WiFi", "Pool"],
+                        "description": "One sentence"
+                    }
+                ],
+                "transportation": ["Option 1", "Option 2"],
+                "costs": ["Accommodation: ₹X", "Food: ₹Y"],
+                "itinerary": [{"day": 1, "activities": ["Morning: Activity", "Afternoon: Activity"]}]
+            }
+
+            IMPORTANT: The 'itinerary' array MUST contain EXACTLY %d objects. Number 'day' fields sequentially from 1 to %d.
+            """.formatted(daysCount, travelers, destination, budgetDisplay, destination, daysCount, daysCount);
 
         try {
-            String content = callGemini(prompt);
+            // Try primary provider
+            log.info("[GeminiService] Using primary provider: {}", primaryProvider);
+            String content = callAI(prompt, primaryProvider);
             content = extractJson(content);
 
             Map<String, Object> itineraryData;
             try {
                 itineraryData = objectMapper.readValue(content, new TypeReference<>() {});
             } catch (Exception e) {
-                log.error("[GeminiService] Invalid JSON from model, raw content logged.");
+                log.error("[GeminiService] Invalid JSON from primary provider");
                 throw e;
             }
 
@@ -180,7 +305,7 @@ public class GeminiService {
                             + " days but required " + daysCount
                             + ". Return EXACTLY " + daysCount + " days now, keep same style.\n";
 
-                    String content2 = callGemini(retryPrompt);
+                    String content2 = callAI(retryPrompt, primaryProvider);
                     content2 = extractJson(content2);
 
                     try {
@@ -195,25 +320,37 @@ public class GeminiService {
             return itineraryData;
 
         } catch (Exception e) {
-            log.error("AI Error: {}", e.getMessage());
+            log.warn("[GeminiService] Primary provider failed, trying fallback: {}", fallbackProvider);
 
-            // Return fallback itinerary
-            List<Map<String, Object>> fallbackItinerary = new ArrayList<>();
-            for (int i = 0; i < daysCount; i++) {
-                fallbackItinerary.add(Map.of(
-                    "day", i + 1,
-                    "activities", List.of("Explore local attractions", "Try local cuisine")
-                ));
+            // Try fallback provider
+            try {
+                String content = callAI(prompt, fallbackProvider);
+                content = extractJson(content);
+                Map<String, Object> itineraryData = objectMapper.readValue(content, new TypeReference<>() {});
+                log.info("[GeminiService] ✅ Fallback provider succeeded");
+                return itineraryData;
+            } catch (Exception e2) {
+                log.error("[GeminiService] Both providers failed: {}", e2.getMessage());
+
+                // Return fallback itinerary
+                List<Map<String, Object>> fallbackItinerary = new ArrayList<>();
+                for (int i = 0; i < daysCount; i++) {
+                    fallbackItinerary.add(Map.of(
+                            "day", i + 1,
+                            "activities", List.of("Explore local attractions", "Try local cuisine")
+                    ));
+                }
+
+                Map<String, Object> fallback = new HashMap<>();
+                fallback.put("places", Collections.emptyList());
+                fallback.put("hotels", Collections.emptyList());
+                fallback.put("transportation", List.of("Public Transport"));
+                fallback.put("costs", List.of("Budget varies"));
+                fallback.put("itinerary", fallbackItinerary);
+                fallback.put("error", "Both providers failed");
+                fallback.put("source", "error");
+                return fallback;
             }
-
-
-            Map<String, Object> fallback = new HashMap<>();
-            fallback.put("places", Collections.emptyList());
-            fallback.put("hotels", Collections.emptyList());
-            fallback.put("transportation", List.of("FALLBACK"));
-            fallback.put("costs", List.of("Rs. 0"));
-            fallback.put("itinerary", fallbackItinerary);
-            return fallback;
         }
     }
 
@@ -232,7 +369,7 @@ public class GeminiService {
         } catch (Exception e) {
             // Cannot parse dates, fall back to single chunk
             return generateItineraryChunk(destination, travelers, startDate, endDate,
-                preferences, budget);
+                    preferences, budget);
         }
 
         if (daysCount > 7) {
@@ -250,9 +387,9 @@ public class GeminiService {
                 if (chunkEnd.isAfter(ed)) chunkEnd = ed;
 
                 Map<String, Object> chunkResult = generateItineraryChunk(
-                    destination, travelers,
-                    chunkStart.toString(), chunkEnd.toString(),
-                    preferences, budget
+                        destination, travelers,
+                        chunkStart.toString(), chunkEnd.toString(),
+                        preferences, budget
                 );
 
                 // Merge itinerary days with correct numbering
@@ -286,6 +423,6 @@ public class GeminiService {
 
         // Single chunk (<=7 days)
         return generateItineraryChunk(destination, travelers, startDate, endDate,
-            preferences, budget);
+                preferences, budget);
     }
 }

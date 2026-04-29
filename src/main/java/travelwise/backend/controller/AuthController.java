@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequiredArgsConstructor
@@ -49,16 +50,29 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Login req) {
-        var userOpt = userRepo.findByEmail(req.getEmail());
-        if (userOpt.isEmpty() || !passwordEncoder.matches(req.getPassword(), userOpt.get().getPassword())) {
+        String identifier = req.getIdentifier();
+        String password = req.getPassword();
+
+        // Try to find user by email first
+        Optional<User> userOpt = userRepo.findByEmail(identifier);
+
+        // If not found by email, try to find by username
+        if (userOpt.isEmpty()) {
+            userOpt = userRepo.findByname(identifier);
+        }
+
+        // If user not found or password doesn't match
+        if (userOpt.isEmpty() || !passwordEncoder.matches(password, userOpt.get().getPassword())) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid email or password"));
         }
+
         User user = userOpt.get();
         String token = jwtUtil.generateToken(Map.of(
                 "id", user.getId(),
                 "email", user.getEmail(),
                 "name", user.getName()
         ));
+
         return ResponseEntity.ok(Map.of(
                 "message", "Login successful ✅",
                 "user", Map.of("id", user.getId(), "name", user.getName(), "email", user.getEmail()),
