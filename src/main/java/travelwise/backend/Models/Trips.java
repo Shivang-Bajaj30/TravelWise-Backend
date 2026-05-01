@@ -17,6 +17,8 @@ public class Trips {
     @Id
     private String id;
 
+    private String userId;
+
     private String location;
 
     private Integer travelers;

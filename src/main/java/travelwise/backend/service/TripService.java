@@ -20,10 +20,8 @@ public class TripService {
     @Autowired
     private GeminiService geminiService;
 
-    /**
-     * Generate itinerary and save to MongoDB
-     */
-    public Trips createTrip(String location, Integer travelers, String startDate,
+    /*  Generate itinerary and save to MongoDB */
+    public Trips createTrip(String userId, String location, Integer travelers, String startDate,
                             String endDate, String preferences, String budget) {
 
         // Call Gemini to generate itinerary
@@ -32,23 +30,21 @@ public class TripService {
         );
 
         // Convert map to Trips object
-        Trips trip = convertMapToTrips(location, travelers, startDate, endDate,
+        Trips trip = convertMapToTrips(userId, location, travelers, startDate, endDate,
                 preferences, itineraryMap);
 
         // Save to MongoDB
         return tripRepo.save(trip);
     }
 
-    /**
-     * Get trip by ID
-     */
-    public Trips getTripById(String id) {
-        return tripRepo.findById(id).orElse(null);
+    /*   Get trip by ID  */
+    public List<Trips> getTripsByUserId(String userId) {
+        return tripRepo.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     // ============ CONVERSION HELPERS ============
 
-    private Trips convertMapToTrips(String location, Integer travelers, String startDate,
+    private Trips convertMapToTrips(String userId, String location, Integer travelers, String startDate,
                                     String endDate, String preferences, Map<String, Object> data) {
 
         List<Place> places = extractPlaces(data.get("places"));
@@ -60,6 +56,7 @@ public class TripService {
         LocalDateTime now = LocalDateTime.now();
 
         return Trips.builder()
+                .userId(userId)
                 .location(location)
                 .travelers(travelers)
                 .startDate(startDate)
