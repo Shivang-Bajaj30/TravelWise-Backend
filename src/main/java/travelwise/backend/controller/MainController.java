@@ -2,6 +2,7 @@ package travelwise.backend.controller;
 
 import travelwise.backend.Models.Packages;
 import travelwise.backend.Models.Trips;
+import travelwise.backend.Models.User;
 import travelwise.backend.Repo.PackageRepo;
 import travelwise.backend.security.JwtUtil;
 import travelwise.backend.service.TripService;
@@ -11,8 +12,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
@@ -87,5 +90,4 @@ public class MainController {
     public List<Packages> getAllPackages() {
         return packageRepository.findAll();
     }
-
 }
