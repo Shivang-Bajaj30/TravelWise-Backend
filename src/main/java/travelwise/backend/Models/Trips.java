@@ -11,7 +11,7 @@ import java.util.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Document(collection = "testing")
+@Document(collection = "trips")
 public class Trips {
 
     @Id

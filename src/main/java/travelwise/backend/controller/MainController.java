@@ -1,6 +1,9 @@
 package travelwise.backend.controller;
 
+import travelwise.backend.Models.Packages;
 import travelwise.backend.Models.Trips;
+import travelwise.backend.Models.User;
+import travelwise.backend.Repo.PackageRepo;
 import travelwise.backend.security.JwtUtil;
 import travelwise.backend.service.TripService;
 import lombok.extern.slf4j.Slf4j;
@@ -9,21 +12,26 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
-@RequestMapping("/api/trips")
+@RequestMapping("/api")
 @Slf4j
 @CrossOrigin(origins = "*")
 
-public class TripsController {
+public class MainController {
 
     @Autowired
     private TripService tripsService;
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private PackageRepo packageRepository;
 
     /** * Extract userId from the Authorization header (Bearer token) */
     private String getUserIdFromHeader(String authHeader) {
@@ -36,7 +44,7 @@ public class TripsController {
     }
 
     /** * Create a new trip with AI-generated itinerary (linked to logged-in user) */
-    @PostMapping("/create")
+    @PostMapping("trips/create")
     public ResponseEntity<Trips> createTrip(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestParam String location,
@@ -59,20 +67,27 @@ public class TripsController {
     /**
      * Get all trips for the logged-in user
      */
-    @GetMapping("/user")
+    @GetMapping("trips/{userId}")
     public ResponseEntity<?> getUserTrips(
+            @PathVariable("userId") String userId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
-            String userId = getUserIdFromHeader(authHeader);
-            if (userId == null) {
+            String tokenUserId = getUserIdFromHeader(authHeader);
+            if (tokenUserId == null || !tokenUserId.equals(userId)) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Unauthorized"));
+                        .body(Map.of("error", "Unauthorized access to these trips"));
             }
+
             List<Trips> trips = tripsService.getTripsByUserId(userId);
             return ResponseEntity.ok(trips);
         } catch (Exception e) {
             log.error("Error fetching user trips: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @GetMapping("packages")
+    public List<Packages> getAllPackages() {
+        return packageRepository.findAll();
     }
 }

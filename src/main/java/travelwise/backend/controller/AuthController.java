@@ -1,17 +1,18 @@
 package travelwise.backend.controller;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
-import travelwise.backend.dto.Login;
-import travelwise.backend.dto.Signup;
-import travelwise.backend.Models.User;
+import travelwise.backend.dto.LoginRequest;
 import travelwise.backend.Repo.UserRepo;
+import travelwise.backend.dto.SignupRequest;
+import travelwise.backend.dto.UserDTO;
+import travelwise.backend.Models.User;
 import travelwise.backend.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -30,10 +31,17 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<?> signup(@RequestBody Signup req) {
-        if (req.getName() == null || req.getEmail() == null || req.getPassword() == null) {
+    public ResponseEntity<?> signup(@RequestBody SignupRequest req) {
+        if (req.getName() == null || req.getName().isBlank() ||
+                req.getEmail() == null || req.getEmail().isBlank() ||
+                req.getPassword() == null || req.getPassword().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "All fields are required"));
         }
+
+        if (req.getPassword().length() < 6) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Password must be at least 6 characters"));
+        }
+
         if (userRepo.existsByEmail(req.getEmail())) {
             return ResponseEntity.badRequest().body(Map.of("error", "User already exists"));
         }
@@ -41,6 +49,8 @@ public class AuthController {
         User user = User.builder()
                 .name(req.getName())
                 .email(req.getEmail())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .password(passwordEncoder.encode(req.getPassword()))
                 .build();
         userRepo.save(user);
@@ -49,9 +59,14 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Login req) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
         String identifier = req.getIdentifier();
         String password = req.getPassword();
+
+        if (req.getIdentifier() == null || req.getIdentifier().isBlank() ||
+                req.getPassword() == null || req.getPassword().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email/username and password are required"));
+        }
 
         // Try to find user by email first
         Optional<User> userOpt = userRepo.findByEmail(identifier);
@@ -61,7 +76,6 @@ public class AuthController {
             userOpt = userRepo.findByname(identifier);
         }
 
-        // If user not found or password doesn't match
         if (userOpt.isEmpty() || !passwordEncoder.matches(password, userOpt.get().getPassword())) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid email or password"));
         }
@@ -75,7 +89,7 @@ public class AuthController {
 
         return ResponseEntity.ok(Map.of(
                 "message", "Login successful ✅",
-                "user", Map.of("id", user.getId(), "name", user.getName(), "email", user.getEmail()),
+                "user", UserDTO.fromUser(user),
                 "token", token
         ));
     }
@@ -99,7 +113,7 @@ public class AuthController {
             var user = userRepo.findByEmail(email).orElse(null);
 
             if (user != null) {
-                return ResponseEntity.ok(user);
+                return ResponseEntity.ok(UserDTO.fromUser(user));
             } else {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "User not found"));
             }
@@ -109,4 +123,51 @@ public class AuthController {
         }
     }
 
+    private String getUserIdFromHeader(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = authHeader.substring(7);
+        var claims = jwtUtil.parseToken(token);
+        return claims.get("id", String.class);
+    }
+
+    @PutMapping("/users/update")
+    public ResponseEntity<?> updateProfile( @RequestHeader(value = "Authorization", required = false) String authHeader,
+                                            @RequestBody Map<String, String> updates) {
+        try {
+            String userId = getUserIdFromHeader(authHeader);
+            if (userId == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Unauthorized"));
+            }
+            // 2. Find the user in the database
+            Optional<User> optionalUser = userRepo.findById(userId);
+            if (optionalUser.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "User not found"));
+            }
+            User user = optionalUser.get();
+
+            if (updates.containsKey("name") && !updates.get("name").isBlank()) {
+                user.setName(updates.get("name"));
+            }
+
+            if (updates.containsKey("email") && !updates.get("email").isBlank()) {
+                user.setEmail(updates.get("email"));
+            }
+
+            user.setUpdatedAt(Instant.now());
+
+            userRepo.save(user);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Profile updated successfully ✅",
+                    "user", UserDTO.fromUser(user)
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "An error occurred while updating the profile"));
+        }
+    }
 }

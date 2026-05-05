@@ -1,4 +1,4 @@
-package travelwise.backend.dto;
+package travelwise.backend.Models;
 
 import lombok.Data;
 
